@@ -28,8 +28,6 @@ Constraints:
 1 <= n <= 45
 */
 
-import "fmt"
-
 func climb(n int, memo map[int]int) int {
     ways, ok := memo[n]
     if ok {
@@ -49,7 +47,7 @@ func climb(n int, memo map[int]int) int {
 
 func climbStairs(n int) int {
 	if n < 1 || n > 45 {
-		fmt.Println("Invalid input. Expecting: 1 <= n <= 45")	
+		// fmt.Println("Invalid input. Expecting: 1 <= n <= 45")	
 		return -1
 	}
 

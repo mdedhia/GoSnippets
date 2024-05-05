@@ -1,2 +1,4 @@
 # GoSnippets
-Go lang code snippets
+Go code snippets
+
+All test passing (with go v1.21 and above)
