@@ -19,7 +19,7 @@ var (
 	min  = flag.Duration("min", 4*time.Second, "Minimum pickup time")
 	max  = flag.Duration("max", 8*time.Second, "Maximum pickup time")
 
-	wg = sync.WaitGroup{}
+	ordersChan = make(chan css.Order, 100)
 )
 
 func main() {
@@ -34,15 +34,20 @@ func main() {
 	// ------ Simulation harness logic goes here using rate, min and max ------
 
 	var actions []css.Action
+	
+	wg := sync.WaitGroup{}
+	go orm.PickupOrder(ordersChan, &wg, &actions)
 
 	for _, order := range orders {
 		log.Printf("Received: %+v", order)
 
 		wg.Add(1)
-		go orm.PlaceOrder(order, actions)
+		go orm.PlaceOrder(order, &actions)
+		ordersChan <- order
 
 		time.Sleep(*rate)
 	}
+	close(ordersChan)
 	wg.Wait()
 
 	// ------------------------------------------------------------------------
