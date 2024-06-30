@@ -1,14 +1,13 @@
 package client
 
 import (
-	// "bytes"
+	"bytes"
 	"encoding/json"
 	"fmt"
-	// "fmt"
-	// "io"
-	// "log"
-	// "math/rand"
-	// "net/http"
+	"io"
+	"log"
+	"math/rand"
+	"net/http"
 	"time"
 )
 
@@ -57,7 +56,7 @@ func NewClient(endpoint, auth string) *Client {
 
 // New fetches a new test problem from the server. The URL also works in a browser for convenience.
 func (c *Client) New(name string, seed int64) (string, []Order, error) {
-/*	if seed == 0 {
+	if seed == 0 {
 		seed = rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
 	}
 
@@ -87,22 +86,26 @@ func (c *Client) New(name string, seed int64) (string, []Order, error) {
 
 	fmt.Println("Orders: ", orders)
 	log.Printf("Fetched new test problem, id=%v: %v", id, url)
-	*/
-	orders := []Order{
-		{"g9ib6", "Yoghurt", "cold", 113},
-		{"xp1iu", "Gas Station Sushi", "room", 83},
-		{"84ira", "Cookie Dough", "cold", 113},
-		{"qcfnz", "Danish Pastry", "room", 86},
-		{"5txkd", "Bacon Burger", "hot", 116},
-		{"c37x8", "Cookie Dough", "cold", 81},
-		// {53ruw Cheeseburger hot 151} {qqwqr Dry Biscuits room 142} {dckgp Cheese Pizza hot 157} {biy6k Bacon Burger hot 131} {ru5x9 Whole Wheat Bread room 80} {p5roq Strawberries room 98} {aenrf Kale Salad cold 170} {7wa86 Danish Pastry room 64} {wutw1 Vanilla Ice Cream cold 73} {69hdh Pad See Ew hot 172} {ujop4 Strawberries room 152} {m8rpd Orange Sherbet cold 171} {mtcxh Yoghurt cold 175} {8j56q French Fries hot 82} {1xzu5 Sushi cold 126} {gtmfh Danish Pastry room 65} {ztmkx Whole Wheat Bread room 115} {h9bac Hamburger hot 103} {581sf Banana room 174} {ei3mx Strawberry Ice Cream cold 128} {phfib Danish Pastry room 95} {4eomn Turkey Sandwich cold 97} {euahp Fish Tacos hot 99} {yf1sh Mixed Greens cold 103} {tp4mu Strawberry Ice Cream cold 64} {6ptbj Popsicle cold 115} {cb31s Gas Station Sushi room 130} {qwd5m Apple room 131} {qzc5f Spaghetti hot 119} {g39tr Mixed Greens cold 159} {aingb Burrito hot 83} {5cpox Italian Meatballs hot 118} {sxg5w Raspberries room 67} {tjouz Pastrami Sandwich cold 136} {xa9p4 Tuna Sandwich cold 102} {h8bcn Pressed Juice cold 140} {z466y Lukewarm Coke room 103} {9pjzb Strawberry Ice Cream cold 176} {56yuw Tomato Soup hot 93} {txffa BBQ Pizza hot 68} {8cxpd Spaghetti hot 92} {417oj Gas Station Sushi room 96}]
-	}
-	return "id", orders, nil
+
+	// orders := []Order{
+	// 	{"g9ib6", "Yoghurt", "cold", 113},
+	// 	{"xp1iu", "Gas Station Sushi", "room", 3},
+	// 	{"84ira", "Cookie Dough", "cold", 133},
+	// 	{"qcfnz", "Danish Pastry", "room", 86},
+	// 	{"5txkd", "Bacon Burger", "hot", 116},
+	// 	{"c37x8", "Cookie Dough", "cold", 81},
+	// 	{"53ruw", "Cheeseburger", "hot", 151},
+	// 	{"qqwqr", "Dry Biscuits", "room", 12},
+	// 	{"dckgp", "Cheese Pizza", "hot", 157},
+	// 	{"biy6k", "Bacon Burger", "hot", 131},
+	// 	//{ru5x9 Whole Wheat Bread room 80} {p5roq Strawberries room 98} {aenrf Kale Salad cold 170} {7wa86 Danish Pastry room 64} {wutw1 Vanilla Ice Cream cold 73} {69hdh Pad See Ew hot 172} {ujop4 Strawberries room 152} {m8rpd Orange Sherbet cold 171} {mtcxh Yoghurt cold 175} {8j56q French Fries hot 82} {1xzu5 Sushi cold 126} {gtmfh Danish Pastry room 65} {ztmkx Whole Wheat Bread room 115} {h9bac Hamburger hot 103} {581sf Banana room 174} {ei3mx Strawberry Ice Cream cold 128} {phfib Danish Pastry room 95} {4eomn Turkey Sandwich cold 97} {euahp Fish Tacos hot 99} {yf1sh Mixed Greens cold 103} {tp4mu Strawberry Ice Cream cold 64} {6ptbj Popsicle cold 115} {cb31s Gas Station Sushi room 130} {qwd5m Apple room 131} {qzc5f Spaghetti hot 119} {g39tr Mixed Greens cold 159} {aingb Burrito hot 83} {5cpox Italian Meatballs hot 118} {sxg5w Raspberries room 67} {tjouz Pastrami Sandwich cold 136} {xa9p4 Tuna Sandwich cold 102} {h8bcn Pressed Juice cold 140} {z466y Lukewarm Coke room 103} {9pjzb Strawberry Ice Cream cold 176} {56yuw Tomato Soup hot 93} {txffa BBQ Pizza hot 68} {8cxpd Spaghetti hot 92} {417oj Gas Station Sushi room 96}]
+	// }
+	return id, orders, nil
 }
 
 // Solve submits a sequence of actions and parameters as a solution to a test problem. Returns test result.
 func (c *Client) Solve(id string, rate, min, max time.Duration, actions []Action) (string, error) {
-	// url := fmt.Sprintf("%v/interview/challenge/solve?auth=%v", c.endpoint, c.auth)
+	url := fmt.Sprintf("%v/interview/challenge/solve?auth=%v", c.endpoint, c.auth)
 
 	payload := solution{
 		Options: options{
@@ -112,14 +115,14 @@ func (c *Client) Solve(id string, rate, min, max time.Duration, actions []Action
 		},
 		Actions: actions,
 	}
-	
+
 	fmt.Println("Payload: ", payload)
 
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
-/*	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	req.Header.Add("x-test-id", id)
 	req.Header.Add("Content-Type", "application/json")
 
@@ -138,6 +141,6 @@ func (c *Client) Solve(id string, rate, min, max time.Duration, actions []Action
 		return "", err
 	}
 	return string(buf), nil
-	*/
-	return string(body), nil
+
+	// return string(body), nil
 }

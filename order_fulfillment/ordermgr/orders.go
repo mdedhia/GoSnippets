@@ -2,27 +2,27 @@ package ordermgr
 
 import (
 	css "challenge/client"
-	"math/rand"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 )
 
 type orderTs struct {
-	Timestamp 	int64
-	Order		css.Order
+	Timestamp int64
+	Order     css.Order
 }
 
 var (
 	pickup_min = 4
 	pickup_max = 8
 
-	max_hot_orders 	= 6
+	max_hot_orders  = 6
 	max_cold_orders = 6
 	max_room_orders = 12
 
 	cold_orders = make([]*orderTs, max_cold_orders)
-	hot_orders 	= make([]*orderTs, max_cold_orders)
+	hot_orders  = make([]*orderTs, max_cold_orders)
 	room_orders = make([]*orderTs, max_room_orders)
 
 	discardedOrders = make(map[string]*orderTs)
@@ -31,13 +31,12 @@ var (
 )
 
 func PlaceOrder(order css.Order, actions *[]css.Action) {
-	fmt.Println("OrderID:", order.ID, "Action: Placed", )
+	fmt.Println("OrderID:", order.ID, "Action: Placed")
 	prepareOrder(order, actions)
 	*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: order.ID, Action: css.Place})
 }
 
 func prepareOrder(order css.Order, actions *[]css.Action) {
-	*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: order.ID, Action: css.Pickup})
 	switch order.Temp {
 	case "hot":
 		if !addOrder(order, "hot") {
@@ -50,7 +49,6 @@ func prepareOrder(order css.Order, actions *[]css.Action) {
 	case "room":
 		addOrderToShelf(order, actions)
 	}
-	fmt.Println("OrderID:", order.ID, "Action: Prepared", )
 }
 
 func addOrder(order css.Order, temp string) bool {
@@ -82,12 +80,12 @@ func addOrder(order css.Order, temp string) bool {
 }
 
 func addOrderToShelf(order css.Order, actions *[]css.Action) {
-	// Add order to any available slot on the shelf. 
+	// Add order to any available slot on the shelf.
 	// If shelf is full, figure out the best order to be discarded from the shelf.
 	// We will discard the order with least remaining freshness,
 	// i.e. the order that will go stale first, and discard it
 	discardOrderIdx := -1
-	orderToDiscard := order		// Start with the current order, incase the curr order has the least freshness
+	orderToDiscard := order // Start with the current order, incase the curr order has the least freshness
 	currOrder := &orderTs{time.Now().Unix(), order}
 
 	roomMut.Lock()
@@ -102,16 +100,19 @@ func addOrderToShelf(order css.Order, actions *[]css.Action) {
 
 	for i := 0; i < max_room_orders; i++ {
 		// Check if any orders from the shelf can be moved to their correct temp storage
-		switch room_orders[i].Order.Temp {
+		rOrder := room_orders[i].Order
+		switch rOrder.Temp {
 		case "hot":
-			if addOrder(order, "hot") {
-				*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: order.ID, Action: css.Move})
+			if addOrder(rOrder, "hot") {
+				*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: rOrder.ID, Action: css.Move})
+				fmt.Println("Moved order", rOrder.ID, "to hot storage")
 				room_orders[i] = currOrder
 				return
 			}
 		case "cold":
-			if addOrder(order, "cold") {
-				*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: order.ID, Action: css.Move})
+			if addOrder(rOrder, "cold") {
+				*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: rOrder.ID, Action: css.Move})
+				fmt.Println("Moved order", rOrder.ID, "to cold storage")
 				room_orders[i] = currOrder
 				return
 			}
@@ -126,32 +127,30 @@ func addOrderToShelf(order css.Order, actions *[]css.Action) {
 	}
 
 	if discardOrderIdx >= 0 {
-		discardedOrder := room_orders[discardOrderIdx].Order
-		discardedOrders[discardedOrder.ID] = &orderTs{time.Now().Unix(), discardedOrder}
-		*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: discardedOrder.ID, Action: css.Discard})
-
 		room_orders[discardOrderIdx] = currOrder
 	}
 
-	fmt.Println("OrderID:", order.ID, "Action: Discarded", )
+	discardedOrders[orderToDiscard.ID] = &orderTs{time.Now().Unix(), orderToDiscard}
+	*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: orderToDiscard.ID, Action: css.Discard})
 
-	*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: order.ID, Action: css.Pickup})
+	fmt.Println("OrderID:", orderToDiscard.ID, "Action: Discarded")
 }
 
 func freshness(rOrder *orderTs) int {
-	return rOrder.Order.Freshness - int(time.Now().Unix() - rOrder.Timestamp)
+	return rOrder.Order.Freshness - int(time.Now().Unix()-rOrder.Timestamp)
 }
 
 func PickupOrder(ordersChan chan css.Order, wg *sync.WaitGroup, actions *[]css.Action) {
-	time.Sleep(time.Second * time.Duration(pickup_min))		// Initial wait time of pickup_min seconds
+	time.Sleep(time.Second * time.Duration(pickup_min)) // Initial wait time of pickup_min seconds
 
 	for order := range ordersChan {
 		fmt.Println("Picking up order", order.ID)
 		if orderWTs, ok := discardedOrders[order.ID]; ok {
-			fmt.Println("PickuOrder(): Discarded order", order.ID)
+			fmt.Println("PickupOrder(): Discarded order", order.ID)
 
 			*actions = append(*actions, css.Action{Timestamp: orderWTs.Timestamp, ID: orderWTs.Order.ID, Action: css.Discard})
-		} else {			
+			delete(discardedOrders, order.ID)
+		} else {
 			switch order.Temp {
 			case "hot":
 				if !pickupHotOrder(order) {
@@ -169,7 +168,7 @@ func PickupOrder(ordersChan chan css.Order, wg *sync.WaitGroup, actions *[]css.A
 			*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: order.ID, Action: css.Pickup})
 		}
 		wg.Done()
-		randNum := rand.Intn(pickup_max - pickup_min + 1) + pickup_min	// Get a random number between pickup min-max
+		randNum := rand.Intn(pickup_max-pickup_min) + pickup_min // Get a random number between pickup min-max
 		time.Sleep(time.Second * time.Duration(randNum))
 	}
 }

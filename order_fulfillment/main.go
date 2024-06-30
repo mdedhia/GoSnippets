@@ -34,7 +34,7 @@ func main() {
 	// ------ Simulation harness logic goes here using rate, min and max ------
 
 	var actions []css.Action
-	
+
 	wg := sync.WaitGroup{}
 	go orm.PickupOrder(ordersChan, &wg, &actions)
 
