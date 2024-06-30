@@ -3,37 +3,50 @@ package ordermgr
 import (
 	css "challenge/client"
 	"fmt"
-	"math/rand"
+	"log"
 	"sync"
 	"time"
 )
 
-type orderTs struct {
+type OrderTs struct {
 	Timestamp int64
 	Order     css.Order
 }
 
 var (
-	pickup_min = 4
-	pickup_max = 8
-
 	max_hot_orders  = 6
 	max_cold_orders = 6
 	max_room_orders = 12
 
-	cold_orders = make([]*orderTs, max_cold_orders)
-	hot_orders  = make([]*orderTs, max_cold_orders)
-	room_orders = make([]*orderTs, max_room_orders)
+	cold_orders = make([]*OrderTs, max_cold_orders)
+	hot_orders  = make([]*OrderTs, max_cold_orders)
+	room_orders = make([]*OrderTs, max_room_orders)
+	discardedOrders = make(map[string]*OrderTs)
 
-	discardedOrders = make(map[string]*orderTs)
+	ordersChan = make(chan *OrderTs, 100)
 
-	coldMut, hotMut, roomMut sync.Mutex
+	coldMut, hotMut, roomMut, dMut sync.Mutex
 )
 
-func PlaceOrder(order css.Order, actions *[]css.Action) {
-	fmt.Println("OrderID:", order.ID, "Action: Placed")
-	prepareOrder(order, actions)
-	*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: order.ID, Action: css.Place})
+func PlaceOrders(orders *[]css.Order, rate *time.Duration, wg *sync.WaitGroup, actions *[]css.Action) {
+	for _, order := range *orders {
+		log.Printf("Received: %+v", order)
+		wg.Add(1)
+		go prepareOrder(order, actions)
+		ordersChan <- &OrderTs{Timestamp: time.Now().Unix(), Order: order}
+		*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: order.ID, Action: css.Place})
+
+		time.Sleep(*rate)
+	}
+	close(ordersChan)
+	wg.Done()
+}
+
+func PickupOrders(min *time.Duration, max *time.Duration, wg *sync.WaitGroup, actions *[]css.Action) {
+	for orderTs := range ordersChan {
+		go pickupOrder(orderTs, min, max, wg, actions)
+	}
+	wg.Done()
 }
 
 func prepareOrder(order css.Order, actions *[]css.Action) {
@@ -58,7 +71,7 @@ func addOrder(order css.Order, temp string) bool {
 		defer hotMut.Unlock()
 		for i := 0; i < max_hot_orders; i++ {
 			if hot_orders[i] == nil {
-				hot_orders[i] = &orderTs{time.Now().Unix(), order}
+				hot_orders[i] = &OrderTs{time.Now().Unix(), order}
 				fmt.Println("Added order", order.ID, "to hot storage")
 				return true
 			}
@@ -68,7 +81,7 @@ func addOrder(order css.Order, temp string) bool {
 		defer coldMut.Unlock()
 		for i := 0; i < max_cold_orders; i++ {
 			if cold_orders[i] == nil {
-				cold_orders[i] = &orderTs{time.Now().Unix(), order}
+				cold_orders[i] = &OrderTs{time.Now().Unix(), order}
 				fmt.Println("Added order", order.ID, "to cold storage")
 				return true
 			}
@@ -85,14 +98,14 @@ func addOrderToShelf(order css.Order, actions *[]css.Action) {
 	// We will discard the order with least remaining freshness,
 	// i.e. the order that will go stale first, and discard it
 	discardOrderIdx := -1
-	orderToDiscard := order // Start with the current order, incase the curr order has the least freshness
-	currOrder := &orderTs{time.Now().Unix(), order}
+	orderToDiscard := &OrderTs{time.Now().Unix(), order}
+	currOrder := &OrderTs{time.Now().Unix(), order}
 
 	roomMut.Lock()
 	defer roomMut.Unlock()
 	for i := 0; i < max_room_orders; i++ {
 		if room_orders[i] == nil {
-			room_orders[i] = &orderTs{time.Now().Unix(), order}
+			room_orders[i] = &OrderTs{time.Now().Unix(), order}
 			fmt.Println("Added order", order.ID, "to shelf")
 			return
 		}
@@ -120,8 +133,8 @@ func addOrderToShelf(order css.Order, actions *[]css.Action) {
 
 		// While parsing the room_orders slice, also figure out the order with the least freshness
 		// This will save us another iteration in case no orders can be moved and an order needs to be discarded
-		if freshness(room_orders[i]) < orderToDiscard.Freshness {
-			orderToDiscard = room_orders[i].Order
+		if room_orders[i].Timestamp < orderToDiscard.Timestamp {
+			orderToDiscard = room_orders[i]
 			discardOrderIdx = i
 		}
 	}
@@ -129,48 +142,62 @@ func addOrderToShelf(order css.Order, actions *[]css.Action) {
 	if discardOrderIdx >= 0 {
 		room_orders[discardOrderIdx] = currOrder
 	}
+	dMut.Lock()
+	discardedOrders[orderToDiscard.Order.ID] = orderToDiscard
+	dMut.Unlock()
+	*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: orderToDiscard.Order.ID, Action: css.Discard})
 
-	discardedOrders[orderToDiscard.ID] = &orderTs{time.Now().Unix(), orderToDiscard}
-	*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: orderToDiscard.ID, Action: css.Discard})
-
-	fmt.Println("OrderID:", orderToDiscard.ID, "Action: Discarded")
+	fmt.Println("OrderID:", orderToDiscard.Order.ID, "Action: Discarded")
 }
 
-func freshness(rOrder *orderTs) int {
-	return rOrder.Order.Freshness - int(time.Now().Unix()-rOrder.Timestamp)
-}
+// func freshness(rOrder *orderTs) int {
+// 	return rOrder.Order.Freshness - int(time.Now().Unix()-rOrder.Timestamp)
+// }
 
-func PickupOrder(ordersChan chan css.Order, wg *sync.WaitGroup, actions *[]css.Action) {
-	time.Sleep(time.Second * time.Duration(pickup_min)) // Initial wait time of pickup_min seconds
+func pickupOrder(orderTs *OrderTs, min *time.Duration, max *time.Duration, wg *sync.WaitGroup, actions *[]css.Action) {
+	// Calculate the pickup window
+	tElapsed := time.Now().Unix() - orderTs.Timestamp
+	time.Sleep(*min - time.Duration(tElapsed))	// Adjust for time elapsed between order place and pickup time
 
-	for order := range ordersChan {
-		fmt.Println("Picking up order", order.ID)
-		if orderWTs, ok := discardedOrders[order.ID]; ok {
-			fmt.Println("PickupOrder(): Discarded order", order.ID)
+	fmt.Println("Picking up order", orderTs.Order.ID)
 
-			*actions = append(*actions, css.Action{Timestamp: orderWTs.Timestamp, ID: orderWTs.Order.ID, Action: css.Discard})
-			delete(discardedOrders, order.ID)
-		} else {
-			switch order.Temp {
-			case "hot":
-				if !pickupHotOrder(order) {
-					// Order was not found in hot storage, check the shelf
-					pickupShelfOrder(order)
-				}
-			case "cold":
-				if !pickupColdOrder(order) {
-					// Order was not found in cold storage, check the shelf
-					pickupShelfOrder(order)
-				}
-			case "room":
-				pickupShelfOrder(order)
+	if processDiscardedOrder(orderTs.Order) {
+		fmt.Println("PickupOrder(): Discarded order", orderTs.Order.ID)
+		*actions = append(*actions, css.Action{Timestamp: orderTs.Timestamp, ID: orderTs.Order.ID, Action: css.Discard})
+	} else {
+		switch orderTs.Order.Temp {
+		case "hot":
+			if !pickupHotOrder(orderTs.Order) {
+				// Order was not found in hot storage, check the shelf
+				pickupShelfOrder(orderTs.Order)
 			}
-			*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: order.ID, Action: css.Pickup})
+		case "cold":
+			if !pickupColdOrder(orderTs.Order) {
+				// Order was not found in cold storage, check the shelf
+				pickupShelfOrder(orderTs.Order)
+			}
+		case "room":
+			pickupShelfOrder(orderTs.Order)
 		}
-		wg.Done()
-		randNum := rand.Intn(pickup_max-pickup_min) + pickup_min // Get a random number between pickup min-max
-		time.Sleep(time.Second * time.Duration(randNum))
+
+		if time.Now().Unix() - orderTs.Timestamp >= int64(max.Seconds()) {
+			*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: orderTs.Order.ID, Action: css.Discard})
+		} else {
+			*actions = append(*actions, css.Action{Timestamp: time.Now().UnixMicro(), ID: orderTs.Order.ID, Action: css.Pickup})
+		}
 	}
+	wg.Done()
+
+}
+
+func processDiscardedOrder(order css.Order) bool {
+	dMut.Lock()
+	defer dMut.Unlock()
+	if _, ok := discardedOrders[order.ID]; ok {
+		delete(discardedOrders, order.ID)
+		return true
+	}
+	return false
 }
 
 func pickupHotOrder(order css.Order) bool {

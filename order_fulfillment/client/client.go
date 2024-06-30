@@ -76,7 +76,6 @@ func (c *Client) New(name string, seed int64) (string, []Order, error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to read body: %v", err)
 	}
-	fmt.Println(buf)
 
 	var orders []Order
 	if err := json.Unmarshal(buf, &orders); err != nil {
