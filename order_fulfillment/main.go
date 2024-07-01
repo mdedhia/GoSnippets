@@ -2,7 +2,7 @@ package main
 
 import (
 	css "challenge/client"
-	orm "challenge/ordermgr"
+	omg "challenge/ordermgr"
 	"flag"
 	"log"
 	"sync"
@@ -16,8 +16,12 @@ var (
 	seed     = flag.Int64("seed", 0, "Problem seed (random if zero)")
 
 	rate = flag.Duration("rate", 500*time.Millisecond, "Inverse order rate")
-	min  = flag.Duration("min", 4*time.Second, "Minimum pickup time")
-	max  = flag.Duration("max", 8*time.Second, "Maximum pickup time")
+	pickupMin  = flag.Duration("pickup-min", 4*time.Second, "Minimum pickup time")
+	pickupMax  = flag.Duration("pickup-max", 8*time.Second, "Maximum pickup time")
+
+	max_cold_orders = 6 
+	max_hot_orders = 6
+	max_room_orders = 12
 )
 
 func main() {
@@ -32,16 +36,18 @@ func main() {
 	// ------ Simulation harness logic goes here using rate, min and max ------
 
 	var actions []css.Action
+	var orderMgr omg.OrderMgr 
+	orderMgr.Init(pickupMin, pickupMax, max_cold_orders, max_hot_orders, max_room_orders)
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
-	go orm.PlaceOrders(&orders, rate, &wg, &actions)
-	go orm.PickupOrders(min, max, &wg, &actions)
+	go orderMgr.PlaceOrders(&orders, rate, &wg, &actions)
+	go orderMgr.PickupOrders(&wg, &actions)
 	wg.Wait()
 
 	// ------------------------------------------------------------------------
 
-	result, err := client.Solve(id, *rate, *min, *max, actions)
+	result, err := client.Solve(id, *rate, *pickupMin, *pickupMax, actions)
 	if err != nil {
 		log.Fatalf("Failed to submit test solution: %v", err)
 	}
